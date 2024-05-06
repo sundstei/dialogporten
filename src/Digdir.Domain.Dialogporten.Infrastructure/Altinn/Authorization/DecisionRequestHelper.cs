@@ -3,6 +3,8 @@ using System.Security.Claims;
 using Digdir.Domain.Dialogporten.Application.Common.Authorization;
 using Digdir.Domain.Dialogporten.Application.Common.Extensions;
 using Digdir.Domain.Dialogporten.Application.Externals.AltinnAuthorization;
+using Digdir.Domain.Dialogporten.Domain.Parties;
+using Digdir.Domain.Dialogporten.Domain.Parties.Abstractions;
 
 namespace Digdir.Domain.Dialogporten.Infrastructure.Altinn.Authorization;
 
@@ -12,30 +14,30 @@ internal static class DecisionRequestHelper
     private const string AltinnUrnNsPrefix = "urn:altinn:";
     private const string PidClaimType = "pid";
     private const string ConsumerClaimType = "consumer";
-    private const string PartyPrefixOrg = "/org/";
-    private const string PartyPrefixPerson = "/person/";
-    private const string AttributeIdSsn = "urn:altinn:ssn";
-    private const string AttributeIdOrganizationNumber = "urn:altinn:organizationnumber";
     private const string AttributeIdAction = "urn:oasis:names:tc:xacml:1.0:action:action-id";
     private const string AttributeIdResource = "urn:altinn:resource";
     private const string AttributeIdResourceInstance = "urn:altinn:resourceinstance";
+    private const string AttributeIdOrg = "urn:altinn:org";
+    private const string AttributeIdApp = "urn:altinn:app";
+    private const string ReservedResourcePrefixForApps = "app_";
+    private const string AttributeIdAppInstance = "urn:altinn:instance-id";
     private const string AttributeIdSubResource = "urn:altinn:subresource";
     private const string PermitResponse = "Permit";
 
     public static XacmlJsonRequestRoot CreateDialogDetailsRequest(DialogDetailsAuthorizationRequest request)
     {
-        var accessSubject = CreateAccessSubjectCategory(request.ClaimsPrincipal.Claims);
+        var accessSubject = CreateAccessSubjectCategory(request.Claims);
         var actions = CreateActionCategories(request.AltinnActions, out var actionIdByName);
         var resources = CreateResourceCategories(request.ServiceResource, request.DialogId, request.Party, request.AltinnActions, out var resourceIdByName);
 
         var multiRequests = CreateMultiRequests(request.AltinnActions, actionIdByName, resourceIdByName);
 
-        var xacmlJsonRequest = new XacmlJsonRequest()
+        var xacmlJsonRequest = new XacmlJsonRequest
         {
             AccessSubject = accessSubject,
             Action = actions,
             Resource = resources,
-            MultiRequests = multiRequests,
+            MultiRequests = multiRequests
         };
 
         return new XacmlJsonRequestRoot { Request = xacmlJsonRequest };
@@ -56,21 +58,23 @@ internal static class DecisionRequestHelper
         var attributes = claims
             .Select(x => x switch
             {
-                { Type: PidClaimType } => new XacmlJsonAttribute { AttributeId = AttributeIdSsn, Value = x.Value },
+                { Type: PidClaimType } => new XacmlJsonAttribute { AttributeId = NorwegianPersonIdentifier.Prefix, Value = x.Value },
                 { Type: var type } when type.StartsWith(AltinnUrnNsPrefix, StringComparison.Ordinal) => new() { AttributeId = type, Value = x.Value },
-                { Type: ConsumerClaimType } when x.TryGetOrgNumber(out var organizationNumber) => new() { AttributeId = AttributeIdOrganizationNumber, Value = organizationNumber },
+                { Type: ConsumerClaimType } when x.TryGetOrgNumber(out var organizationNumber) => new() { AttributeId = NorwegianOrganizationIdentifier.Prefix, Value = organizationNumber },
                 _ => null
             })
             .Where(x => x is not null)
             .Cast<XacmlJsonAttribute>()
             .ToList();
 
-        if (attributes.Any(x => x.AttributeId == AttributeIdSsn))
+        // If we're authorizing a person (ie. ID-porten token), we are not interested in the consumer-claim (organization number)
+        // as that is not relevant for the authorization decision (it's just the organization owning the OAuth client).
+        if (attributes.Any(x => x.AttributeId == NorwegianPersonIdentifier.Prefix))
         {
-            attributes.RemoveAll(x => x.AttributeId == AttributeIdOrganizationNumber);
+            attributes.RemoveAll(x => x.AttributeId == NorwegianOrganizationIdentifier.Prefix);
         }
 
-        return new() { new() { Id = SubjectId, Attribute = attributes } };
+        return [new() { Id = SubjectId, Attribute = attributes }];
     }
 
     private static List<XacmlJsonCategory> CreateActionCategories(
@@ -88,7 +92,7 @@ internal static class DecisionRequestHelper
             .Select(x => new XacmlJsonCategory
             {
                 Id = x.Value,
-                Attribute = new() { new() { AttributeId = AttributeIdAction, Value = x.Key } }
+                Attribute = [new() { AttributeId = AttributeIdAction, Value = x.Key }]
             })
             .ToList();
     }
@@ -108,7 +112,7 @@ internal static class DecisionRequestHelper
                 x => x.id);
 
 
-        var partyAttribute = ExtractPartyAttribute(party);
+        var partyAttribute = GetPartyAttribute(party);
         return resourceIdByName
             .Select(x =>
                 CreateResourceCategory(x.Value, serviceResource, dialogId, partyAttribute, x.Key))
@@ -117,11 +121,16 @@ internal static class DecisionRequestHelper
 
     private static XacmlJsonCategory CreateResourceCategory(string id, string serviceResource, Guid? dialogId, XacmlJsonAttribute? partyAttribute, string? subResource = null)
     {
-        var (ns, value) = SplitNsAndValue(serviceResource);
+        var (ns, value, org) = SplitNsAndValue(serviceResource);
         var attributes = new List<XacmlJsonAttribute>
         {
             new() { AttributeId = ns, Value = value }
         };
+
+        if (org is not null)
+        {
+            attributes.Add(new XacmlJsonAttribute { AttributeId = AttributeIdOrg, Value = org });
+        }
 
         if (partyAttribute is not null)
         {
@@ -130,7 +139,29 @@ internal static class DecisionRequestHelper
 
         if (dialogId is not null)
         {
-            attributes.Add(new() { AttributeId = AttributeIdResourceInstance, Value = dialogId.ToString() });
+            if (ns == AttributeIdResource)
+            {
+                attributes.Add(new()
+                {
+                    AttributeId = AttributeIdResourceInstance,
+                    Value = dialogId.ToString()
+                });
+            }
+            else if (ns == AttributeIdAppInstance)
+            {
+                // TODO!
+                // For app instances, we the syntax of the value is "{partyID}/{instanceID}".
+                // We do not have Altinn partyID in the request, so we cannot support this.
+                // This means we cannot easily support instance specific authorizations for apps.
+                // This should probably be fixed in the PDP, lest we use the party lookup service
+                // to get this value (which would suck).
+                /*
+                {
+                    AttributeId = AttributeIdAppInstance,
+                    Value = dialogId.ToString()
+                });
+                */
+            }
         }
 
         if (subResource is not null)
@@ -145,43 +176,45 @@ internal static class DecisionRequestHelper
         };
     }
 
-    private static (string, string) SplitNsAndValue(string serviceResource)
+    private static (string, string, string?) SplitNsAndValue(string serviceResource)
     {
         var lastColonIndex = serviceResource.LastIndexOf(':');
         if (lastColonIndex == -1 || lastColonIndex == serviceResource.Length - 1)
         {
             // If we don't recognize the format, we just return the whole string as the value and assume
             // that the caller wants to refer a resource in the Resource Registry namespace.
-            return (AttributeIdResource, serviceResource);
+            return (AttributeIdResource, serviceResource, null);
         }
 
         var ns = serviceResource[..lastColonIndex];
         var value = serviceResource[(lastColonIndex + 1)..];
 
-        return (ns, value);
+        if (!value.StartsWith(ReservedResourcePrefixForApps, StringComparison.Ordinal))
+        {
+            return (ns, value, null);
+        }
+
+        // If the value starts with the reserved app prefix, we assume that the value is an app id
+        // and we need to split it into the org and app id based on the format "app_{org}_{app_id}".
+        // We also use the app namespace for the attribute id.
+        var parts = value.Split('_');
+        return parts.Length >= 3
+            ? (AttributeIdApp, string.Join('_', parts[2..]), parts[1])
+            : (AttributeIdApp, value, null);
     }
 
-    private static XacmlJsonAttribute? ExtractPartyAttribute(string party)
+    private static XacmlJsonAttribute? GetPartyAttribute(string party)
     {
-        var partyAttribute = new XacmlJsonAttribute();
-
-        if (party.StartsWith(PartyPrefixOrg, StringComparison.Ordinal))
+        if (PartyIdentifier.TryParse(party, out var partyIdentifier))
         {
-            partyAttribute.AttributeId = AttributeIdOrganizationNumber;
-            partyAttribute.Value = party[PartyPrefixOrg.Length..];
-
-        }
-        else if (party.StartsWith(PartyPrefixPerson, StringComparison.Ordinal))
-        {
-            partyAttribute.AttributeId = AttributeIdSsn;
-            partyAttribute.Value = party[PartyPrefixPerson.Length..];
-        }
-        else
-        {
-            return null;
+            return new XacmlJsonAttribute
+            {
+                AttributeId = partyIdentifier.Prefix(),
+                Value = partyIdentifier.Id
+            };
         }
 
-        return partyAttribute;
+        return null;
     }
 
     private static XacmlJsonMultiRequests CreateMultiRequests(
@@ -191,7 +224,7 @@ internal static class DecisionRequestHelper
     {
         var multiRequests = new XacmlJsonMultiRequests
         {
-            RequestReference = new List<XacmlJsonRequestReference>()
+            RequestReference = []
         };
 
 
@@ -201,7 +234,7 @@ internal static class DecisionRequestHelper
             {
                 multiRequests.RequestReference.Add(new XacmlJsonRequestReference
                 {
-                    ReferenceId = new List<string> { SubjectId, resourceIdByName[resourceName], actionId }
+                    ReferenceId = [SubjectId, resourceIdByName[resourceName], actionId]
                 });
             }
         }
@@ -223,18 +256,18 @@ internal static class DecisionRequestHelper
                 new (Constants.ReadAction, Constants.MainResource)
             };
 
-            var accessSubject = CreateAccessSubjectCategory(request.ClaimsPrincipal.Claims);
+            var accessSubject = CreateAccessSubjectCategory(request.Claims);
             var actions = CreateActionCategories(requestActions, out _);
             var resources = CreateResourceCategoriesForSearch(request.ConstraintServiceResources, request.ConstraintParties);
 
             var multiRequests = CreateMultiRequestsForSearch(resources);
 
-            var xacmlJsonRequest = new XacmlJsonRequest()
+            var xacmlJsonRequest = new XacmlJsonRequest
             {
                 AccessSubject = accessSubject,
                 Action = actions,
                 Resource = resources,
-                MultiRequests = multiRequests,
+                MultiRequests = multiRequests
             };
 
             return new XacmlJsonRequestRoot { Request = xacmlJsonRequest };
@@ -252,33 +285,42 @@ internal static class DecisionRequestHelper
 
             for (var i = 0; i < xamlJsonRequestRoot.Request.MultiRequests.RequestReference.Count; i++)
             {
-                if (xamlJsonResponse.Response[i].Decision != PermitResponse)
+                if (i >= xamlJsonResponse.Response.Count || xamlJsonResponse.Response[i].Decision != PermitResponse)
                 {
                     continue;
                 }
 
-                // Get the name of the resource.
+                // Get the name of the resource. This may be either an app or an generic service resource.
                 var resourceId = $"r{i + 1}";
-                var serviceResource = $"{AttributeIdResource}:" + xamlJsonRequestRoot.Request.Resource.First(r => r.Id == resourceId).Attribute
-                        .First(a => a.AttributeId == AttributeIdResource).Value;
+                var resourceList = xamlJsonRequestRoot.Request.Resource.First(r => r.Id == resourceId).Attribute;
+                var resource = resourceList.First(a => a.AttributeId is AttributeIdResource or AttributeIdApp);
+
+                // If it's an app, we need to include the org code in the service resource
+                if (resource.AttributeId == AttributeIdApp)
+                {
+                    var orgCode = resourceList.First(a => a.AttributeId == AttributeIdOrg).Value;
+                    resource.Value = $"app_{orgCode}_{resource.Value}";
+                }
+
+                var serviceResource = resource.AttributeId + ":" + resource.Value;
 
                 string party;
                 var partyOrgNr = xamlJsonRequestRoot.Request.Resource.First(r => r.Id == resourceId).Attribute
-                        .FirstOrDefault(a => a.AttributeId == AttributeIdOrganizationNumber);
+                        .FirstOrDefault(a => a.AttributeId == NorwegianOrganizationIdentifier.Prefix);
                 if (partyOrgNr != null)
                 {
-                    party = PartyPrefixOrg + partyOrgNr.Value;
+                    party = NorwegianOrganizationIdentifier.PrefixWithSeparator + partyOrgNr.Value;
                 }
                 else
                 {
                     var partySsn = xamlJsonRequestRoot.Request.Resource.First(r => r.Id == resourceId).Attribute
-                        .First(a => a.AttributeId == AttributeIdSsn);
-                    party = PartyPrefixPerson + partySsn.Value;
+                        .First(a => a.AttributeId == NorwegianPersonIdentifier.Prefix);
+                    party = NorwegianPersonIdentifier.PrefixWithSeparator + partySsn.Value;
                 }
 
                 if (!response.PartiesByResources.TryGetValue(serviceResource, out var parties))
                 {
-                    parties = new List<string>();
+                    parties = [];
                     response.PartiesByResources.Add(serviceResource, parties);
                 }
 
@@ -297,7 +339,7 @@ internal static class DecisionRequestHelper
             var resourceCounter = 0;
             foreach (var party in parties)
             {
-                var partyAttribute = ExtractPartyAttribute(party);
+                var partyAttribute = GetPartyAttribute(party);
 
                 foreach (var serviceResource in serviceResources)
                 {
@@ -314,14 +356,14 @@ internal static class DecisionRequestHelper
         {
             var multiRequests = new XacmlJsonMultiRequests
             {
-                RequestReference = new List<XacmlJsonRequestReference>()
+                RequestReference = []
             };
 
             for (var i = 1; i <= resources.Count; i++)
             {
                 multiRequests.RequestReference.Add(new XacmlJsonRequestReference
                 {
-                    ReferenceId = new List<string> { SubjectId, $"r{i}", "a1" }
+                    ReferenceId = [SubjectId, $"r{i}", "a1"]
                 });
             }
 

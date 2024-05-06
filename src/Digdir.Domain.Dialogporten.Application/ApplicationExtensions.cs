@@ -2,7 +2,7 @@
 using Digdir.Domain.Dialogporten.Application.Common.Behaviours;
 using Digdir.Domain.Dialogporten.Application.Common.Extensions;
 using Digdir.Domain.Dialogporten.Application.Common.Extensions.OptionExtensions;
-using Digdir.Domain.Dialogporten.Application.Features.V1.Common.Localizations;
+using Digdir.Domain.Dialogporten.Application.Common.Services;
 using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.Configuration;
@@ -31,24 +31,48 @@ public static class ApplicationExtensions
             .AddMediatR(x => x.RegisterServicesFromAssembly(thisAssembly))
             .AddValidatorsFromAssembly(thisAssembly, ServiceLifetime.Transient, includeInternalTypes: true)
 
+            // Singleton
+            .AddSingleton<ICompactJwsGenerator, Ed25519Generator>()
+
             // Scoped
             .AddScoped<IDomainContext, DomainContext>()
             .AddScoped<ITransactionTime, TransactionTime>()
+            .AddScoped<IDialogTokenGenerator, DialogTokenGenerator>()
 
             // Transient
-            .AddTransient<IUserService, UserService>()
-            .AddTransient<ILocalizationService, LocalizationService>()
+            .AddTransient<IStringHasher, PersistentRandomSaltStringHasher>()
+            .AddTransient<IUserOrganizationRegistry, UserOrganizationRegistry>()
+            .AddTransient<IUserResourceRegistry, UserResourceRegistry>()
+            .AddTransient<IUserNameRegistry, UserNameRegistry>()
+            .AddTransient<IUserParties, UserParties>()
+            .AddTransient<IDialogActivityService, DialogActivityService>()
             .AddTransient<IClock, Clock>()
             .AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehaviour<,>))
             .AddTransient(typeof(IPipelineBehavior<,>), typeof(DomainContextBehaviour<,>));
 
-        if (!environment.IsDevelopment()) return services;
+        if (!environment.IsDevelopment())
+        {
+            return services;
+        }
 
         var localDeveloperSettings = configuration.GetLocalDevelopmentSettings();
-        services.Decorate<IUserService, LocalDevelopmentUserServiceDecorator>(
+        services.Decorate<IUserResourceRegistry, LocalDevelopmentUserResourceRegistryDecorator>(
             predicate:
             localDeveloperSettings.UseLocalDevelopmentUser ||
             localDeveloperSettings.UseLocalDevelopmentResourceRegister);
+
+        services.Decorate<IUserOrganizationRegistry, LocalDevelopmentUserOrganizationRegistryDecorator>(
+            predicate:
+            localDeveloperSettings.UseLocalDevelopmentUser ||
+            localDeveloperSettings.UseLocalDevelopmentOrganizationRegister);
+
+        services.Decorate<IUserNameRegistry, LocalDevelopmentUserNameRegistryDecorator>(
+            predicate:
+            localDeveloperSettings.UseLocalDevelopmentUser ||
+            localDeveloperSettings.UseLocalDevelopmentNameRegister);
+
+        services.Decorate<ICompactJwsGenerator, LocalDevelopmentCompactJwsGeneratorDecorator>(
+            predicate: localDeveloperSettings.UseLocalDevelopmentCompactJwsGenerator);
 
         return services;
     }

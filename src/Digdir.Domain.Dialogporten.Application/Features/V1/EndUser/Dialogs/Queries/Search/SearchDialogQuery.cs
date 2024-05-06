@@ -107,41 +107,53 @@ public sealed class SearchDialogQueryOrderDefinition : IOrderDefinition<SearchDi
 }
 
 [GenerateOneOf]
-public partial class SearchDialogResult : OneOfBase<PaginatedList<SearchDialogDto>, ValidationError> { }
+public partial class SearchDialogResult : OneOfBase<PaginatedList<SearchDialogDto>, ValidationError, Forbidden>;
 
 internal sealed class SearchDialogQueryHandler : IRequestHandler<SearchDialogQuery, SearchDialogResult>
 {
     private readonly IDialogDbContext _db;
     private readonly IMapper _mapper;
     private readonly IClock _clock;
+    private readonly IUserNameRegistry _userNameRegistry;
     private readonly IAltinnAuthorization _altinnAuthorization;
+    private readonly IStringHasher _stringHasher;
 
     public SearchDialogQueryHandler(
         IDialogDbContext db,
         IMapper mapper,
         IClock clock,
-        IAltinnAuthorization altinnAuthorization)
+        IUserNameRegistry userNameRegistry,
+        IAltinnAuthorization altinnAuthorization,
+        IStringHasher stringHasher)
     {
         _db = db ?? throw new ArgumentNullException(nameof(db));
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _userNameRegistry = userNameRegistry ?? throw new ArgumentNullException(nameof(userNameRegistry));
         _altinnAuthorization = altinnAuthorization ?? throw new ArgumentNullException(nameof(altinnAuthorization));
+        _stringHasher = stringHasher;
     }
 
     public async Task<SearchDialogResult> Handle(SearchDialogQuery request, CancellationToken cancellationToken)
     {
+        if (!_userNameRegistry.TryGetCurrentUserPid(out var userPid))
+        {
+            return new Forbidden("No valid user pid found.");
+        }
+
         var searchExpression = Expressions.LocalizedSearchExpression(request.Search, request.SearchCultureCode);
         var authorizedResources = await _altinnAuthorization.GetAuthorizedResourcesForSearch(
-            request.Party ?? new List<string>(),
-            request.ServiceResource ?? new List<string>(),
-            cancellationToken);
+            request.Party ?? [],
+            request.ServiceResource ?? [],
+            cancellationToken: cancellationToken);
 
         if (authorizedResources.HasNoAuthorizations)
         {
             return new PaginatedList<SearchDialogDto>(Enumerable.Empty<SearchDialogDto>(), false, null, request.OrderBy.DefaultIfNull().GetOrderString());
         }
 
-        return await _db.Dialogs
+        var paginatedList = await _db.Dialogs
+            .AsNoTracking()
             .WhereUserIsAuthorizedFor(authorizedResources)
             .WhereIf(!request.Org.IsNullOrEmpty(), x => request.Org!.Contains(x.Org))
             .WhereIf(!request.ServiceResource.IsNullOrEmpty(), x => request.ServiceResource!.Contains(x.ServiceResource))
@@ -164,5 +176,16 @@ internal sealed class SearchDialogQueryHandler : IRequestHandler<SearchDialogQue
             .Where(x => !x.ExpiresAt.HasValue || x.ExpiresAt > _clock.UtcNowOffset)
             .ProjectTo<SearchDialogDto>(_mapper.ConfigurationProvider)
             .ToPaginatedListAsync(request, cancellationToken: cancellationToken);
+
+        foreach (var seenLog in paginatedList.Items.SelectMany(x => x.SeenSinceLastUpdate))
+        {
+            // Before we hash the end user id, check if the seen log entry is for the current user
+            seenLog.IsCurrentEndUser = userPid == seenLog.EndUserIdHash;
+            // TODO: Add test to not expose un-hashed end user id to the client
+            // https://github.com/digdir/dialogporten/issues/596
+            seenLog.EndUserIdHash = _stringHasher.Hash(seenLog.EndUserIdHash);
+        }
+
+        return paginatedList;
     }
 }

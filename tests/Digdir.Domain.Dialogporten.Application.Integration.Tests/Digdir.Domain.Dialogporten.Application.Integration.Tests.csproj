@@ -10,12 +10,12 @@
 
     <ItemGroup>
         <PackageReference Include="FluentAssertions" Version="6.12.0"/>
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
         <PackageReference Include="NSubstitute" Version="5.1.0"/>
         <PackageReference Include="Respawn" Version="6.1.0"/>
         <PackageReference Include="Testcontainers" Version="3.6.0" />
         <PackageReference Include="Testcontainers.PostgreSql" Version="3.6.0" />
-        <PackageReference Include="xunit" Version="2.6.3" />
+        <PackageReference Include="xunit" Version="2.7.0" />
         <PackageReference Include="xunit.runner.visualstudio" Version="2.5.5">
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
@@ -29,6 +29,7 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\Digdir.Domain.Dialogporten.Application\Digdir.Domain.Dialogporten.Application.csproj"/>
         <ProjectReference Include="..\..\src\Digdir.Domain.Dialogporten.Infrastructure\Digdir.Domain.Dialogporten.Infrastructure.csproj"/>
+        <ProjectReference Include="..\..\src\Digdir.Tool.Dialogporten.GenerateFakeData\Digdir.Tool.Dialogporten.GenerateFakeData.csproj" />
     </ItemGroup>
 
 </Project>

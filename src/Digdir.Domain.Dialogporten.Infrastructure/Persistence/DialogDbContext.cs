@@ -30,13 +30,17 @@ internal sealed class DialogDbContext : DbContext, IDialogDbContext
     public DbSet<DialogElementUrl> DialogElementUrls => Set<DialogElementUrl>();
     public DbSet<DialogGuiActionPriority> DialogGuiActionTypes => Set<DialogGuiActionPriority>();
     public DbSet<DialogActivityType> DialogActivityTypes => Set<DialogActivityType>();
+    public DbSet<DialogSeenLog> DialogSeenLog => Set<DialogSeenLog>();
     public DbSet<DialogContentType> DialogContentTypes => Set<DialogContentType>();
     public DbSet<DialogContent> DialogContent => Set<DialogContent>();
 
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<OutboxMessageConsumer> OutboxMessageConsumers => Set<OutboxMessageConsumer>();
 
-    public bool TrySetOriginalRevision<TEntity>(
+    //protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
+    //    optionsBuilder.LogTo(Console.WriteLine);
+
+    internal bool TrySetOriginalRevision<TEntity>(
         TEntity? entity,
         Guid? revision)
         where TEntity : class, IVersionableEntity
@@ -74,7 +78,7 @@ internal sealed class DialogDbContext : DbContext, IDialogDbContext
             .ToList();
 
         return ids.Count == 0
-            ? new()
+            ? []
             : await Set<TEntity>()
                 .IgnoreQueryFilters()
                 .Select(x => x.Id)

@@ -3,12 +3,13 @@
 namespace Digdir.Library.Entity.Abstractions.Features.Aggregate;
 
 /// <summary>
-/// Represents a node in an aggregate tree. 
+/// Represents a node in an aggregate tree.
 /// </summary>
 public abstract class AggregateNode
 {
-    private static readonly Type _openGenericAggregateNodeType = typeof(AggregateNode<>);
-    private readonly List<AggregateNode> _children = new();
+    private static readonly Type OpenGenericAggregateNodeType = typeof(AggregateNode<>);
+    private readonly HashSet<AggregateNode> _children = [];
+    private readonly HashSet<AggregateNode> _parents = [];
     private readonly List<AggregateNodeProperty> _modifiedProperties;
 
     /// <summary>
@@ -22,21 +23,38 @@ public abstract class AggregateNode
     public IReadOnlyCollection<AggregateNodeProperty> ModifiedProperties => _modifiedProperties;
 
     /// <summary>
-    /// A collection of modified children. A child node is modified if it itself 
-    /// is modified, or one of its children are modified. Modified in this 
-    /// context meens added, modified, or deleted. 
+    /// A collection of modified children. A child node is modified if it itself
+    /// is modified, or one of its children are modified. Modified in this
+    /// context means added, modified, or deleted.
     /// </summary>
     public IReadOnlyCollection<AggregateNode> Children => _children;
 
     /// <summary>
+    /// A collection of parents.
+    /// </summary>
+    public IReadOnlyCollection<AggregateNode> Parents => _parents;
+
+    /// <summary>
     /// The state of the <see cref="Entity"/> this node represents.
     /// </summary>
-    public AggregateNodeState State { get; }
+    public AggregateNodeState State { get; internal set; }
+
+    /// <summary>
+    /// True when the <see cref="Entity"/> this node represents has been deleted by a parent node. False if directly deleted.
+    /// </summary>
+    public bool DeletedByParent { get; internal set; }
+
+    /// <summary>
+    /// True when the <see cref="Entity"/> this node represents has been modified by a child node. False if directly modified.
+    /// </summary>
+    public bool ModifiedByChild { get; internal set; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AggregateNode"/> class.
     /// </summary>
-    protected AggregateNode(object entity, AggregateNodeState state,
+    protected AggregateNode(
+        object entity,
+        AggregateNodeState state,
         IEnumerable<AggregateNodeProperty> modifiedProperties)
     {
         Entity = entity;
@@ -45,6 +63,10 @@ public abstract class AggregateNode
     }
 
     internal void AddChild(AggregateNode node) => _children.Add(node);
+    internal void AddParent(AggregateNode node) => _parents.Add(node);
+
+    internal bool IsLeafNode => _children.Count == 0;
+    internal bool IsRootNode => _parents.Count == 0;
 
     internal static AggregateNode Create(Type type, object entity, AggregateNodeState state,
         IEnumerable<AggregateNodeProperty> modifiedProperties)
@@ -56,11 +78,16 @@ public abstract class AggregateNode
         }
 
         var nodeArguments = new[] { entity, state, modifiedProperties };
-        var genericType = _openGenericAggregateNodeType.MakeGenericType(type);
+        var genericType = OpenGenericAggregateNodeType.MakeGenericType(type);
         var node = (AggregateNode)Activator.CreateInstance(genericType, BindingFlags.NonPublic | BindingFlags.Instance,
             null, nodeArguments, null)!;
         return node;
     }
+
+    /// <summary>
+    /// Convenience method to check if the state of the node is <see cref="AggregateNodeState.Modified"/> and not by a child node.
+    /// </summary>
+    public bool IsDirectlyModified() => State is AggregateNodeState.Modified && !ModifiedByChild;
 }
 
 /// <summary>
@@ -92,19 +119,24 @@ public enum AggregateNodeState
     Added = 1,
 
     /// <summary>
-    /// All or some of the entities property values have been modified.
+    /// All or some of the entities property values, or part of its aggregate children chain have been modified.
     /// </summary>
     Modified = 2,
 
     /// <summary>
-    /// The entity has been marked for deletion from the database.
+    /// The entity, or part of its aggregate parent chain have been marked for deletion.
     /// </summary>
     Deleted = 3,
 
     /// <summary>
     /// The entities property values have not been changed from the values in the database.
     /// </summary>
-    Unchanged = 4
+    Unchanged = 4,
+
+    /// <summary>
+    /// The entity, or its aggregate parent chain have been marked for restoration.
+    /// </summary>
+    Restored = 5
 }
 
 /// <summary>

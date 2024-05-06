@@ -3,55 +3,58 @@ import {
     getEU,
     uuidv4,
     setTitle,
-    setBody,
+    setAdditionalInfo,
     setSearchTags,
     setSenderName,
     setStatus,
-    setExtendedStatus,
-    setServiceResource,
     setParty,
+    setServiceResource,
+    setExtendedStatus,
     setDueAt,
     setExpiresAt,
     setVisibleFrom, 
     postSO,
     putSO,
-    deleteSO } from '../../common/testimports.js'
+    purgeSO } from '../../common/testimports.js'
 
 import { default as dialogToInsert } from '../serviceowner/testdata/01-create-dialog.js';
-
+import { getDefaultEnduserOrgNo, getDefaultEnduserSsn } from '../../common/token.js';
 export default function () {
 
     let dialogs = [];
     let dialogIds = [];
     
     let titleToSearchFor = uuidv4();    
-    let bodyToSearchFor = uuidv4();
+    let additionalInfoToSearchFor = uuidv4();
     let searchTagsToSearchFor = [ uuidv4(), uuidv4() ];
     let extendedStatusToSearchFor = "status:" + uuidv4();
     let secondExtendedStatusToSearchFor = "status:" + uuidv4();
     let senderNameToSearchFor = uuidv4()
-    let enduserParty = "/person/07874299582";
-    let auxResource = "urn:altinn:resource:ttd-altinn-events-automated-tests"; // Note! We assume that this exists!
+    let defaultParty = "urn:altinn:person:identifier-no::" + getDefaultEnduserSsn();
+    let auxParty = "urn:altinn:organization:identifier-no::" + getDefaultEnduserOrgNo(); // some party that we can access
+    let auxResource = "urn:altinn:resource:ttd-dialogporten-automated-tests-2"; // Note! We assume that this exists!
     let titleForDueAtItem = "due_" + uuidv4();
     let titleForExpiresAtItem = "expires_" + uuidv4();
     let titleForUpdatedItem = "updated_" + uuidv4();
     let titleForLastItem = "last_" + uuidv4();
+    let idForCustomOrg = uuidv4();
     let createdAfter = (new Date()).toISOString(); // We use this on all tests to hopefully avoid clashing with unrelated dialogs
-    let defaultFilter = "?CreatedAfter=" + createdAfter + "&Party=" + enduserParty;
+    let defaultFilter = "?CreatedAfter=" + createdAfter + "&Party=" + defaultParty;
+    let auxOrg = "digdir";
 
     describe('Arrange: Create some dialogs to test against', () => {
 
-        for (let i = 0; i < 11; i++) {
+        for (let i = 0; i < 15; i++) {
             let d = dialogToInsert();
             setTitle(d, "e2e-test-dialog eu #" + (i+1), "nn_NO");
-            setParty(d, enduserParty);
+            setParty(d, defaultParty);
             setVisibleFrom(d, null);
             dialogs.push(d);
         }
 
         let d = -1;        
         setTitle(dialogs[++d], titleToSearchFor);
-        setBody(dialogs[++d], bodyToSearchFor);
+        setAdditionalInfo(dialogs[++d], additionalInfoToSearchFor);
         setSearchTags(dialogs[++d], searchTagsToSearchFor);
         setStatus(dialogs[++d], "signing");
         setExtendedStatus(dialogs[++d], extendedStatusToSearchFor);
@@ -60,7 +63,7 @@ export default function () {
         setExtendedStatus(dialogs[d], secondExtendedStatusToSearchFor);
 
         setServiceResource(dialogs[++d], auxResource);
-        setParty(dialogs[++d], enduserParty);
+        setParty(dialogs[++d], auxParty);
         
         setTitle(dialogs[++d], titleForDueAtItem);
         setDueAt(dialogs[d], new Date("2033-12-07T10:13:00Z"));
@@ -68,10 +71,14 @@ export default function () {
         setTitle(dialogs[++d], titleForExpiresAtItem);
         setExpiresAt(dialogs[d], new Date("2034-03-07T10:13:00Z"));
 
+        dialogs[++d].id = idForCustomOrg;
+
         setTitle(dialogs[dialogs.length-1], titleForLastItem);
 
+        let tokenOptions = {};
         dialogs.forEach((d) => {
-            let r = postSO("dialogs", d);
+            tokenOptions = (d.id == idForCustomOrg) ? { orgName: auxOrg } : {};
+            let r = postSO("dialogs", d, null, tokenOptions);            
             expectStatusFor(r).to.equal(201);
             dialogIds.push(r.json());
         });
@@ -99,7 +106,7 @@ export default function () {
     });
 
     describe('Search for body', () => {
-        let r = getEU('dialogs/' + defaultFilter + '&Search=' + bodyToSearchFor);
+        let r = getEU('dialogs/' + defaultFilter + '&Search=' + additionalInfoToSearchFor);
         expectStatusFor(r).to.equal(200);
         expect(r, 'response').to.have.validJsonBody();
         expect(r.json(), 'response json').to.have.property("items").with.lengthOf(1);
@@ -142,16 +149,16 @@ export default function () {
         expectStatusFor(r).to.equal(200);
         expect(r, 'response').to.have.validJsonBody();
         expect(r.json(), 'response json').to.have.property("items").with.lengthOf(3);
-        expect(r.json().items[0], 'first dialog').to.have.property("title").that.hasLocalizedText(titleForDueAtItem);
-        expect(r.json().items[1], 'second dialog').to.have.property("title").that.hasLocalizedText(titleForUpdatedItem);
-        expect(r.json().items[2], 'third dialog').to.have.property("title").that.hasLocalizedText(titleForLastItem);
+        expect(r.json().items[0], 'first dialog').to.have.haveContentOfType("Title").that.hasLocalizedText(titleForDueAtItem);
+        expect(r.json().items[1], 'second dialog').to.have.haveContentOfType("Title").that.hasLocalizedText(titleForUpdatedItem);
+        expect(r.json().items[2], 'third dialog').to.have.haveContentOfType("Title").that.hasLocalizedText(titleForLastItem);
 
         r = getEU('dialogs/' + defaultFilter + '&Limit=3&OrderBy=dueAt_asc,updatedAt_desc');
         expectStatusFor(r).to.equal(200);
         expect(r, 'response').to.have.validJsonBody();
         expect(r.json(), 'response json').to.have.property("items").with.lengthOf(3);
-        expect(r.json().items[0], 'first dialog reversed').to.have.property("title").that.hasLocalizedText(titleForUpdatedItem);
-        expect(r.json().items[1], 'second dialog reversed').to.have.property("title").that.hasLocalizedText(titleForLastItem);
+        expect(r.json().items[0], 'first dialog reversed').to.have.haveContentOfType("Title").that.hasLocalizedText(titleForUpdatedItem);
+        expect(r.json().items[1], 'second dialog reversed').to.have.haveContentOfType("Title").that.hasLocalizedText(titleForLastItem);
     });
 
     describe('List with resource filter', () => {
@@ -162,15 +169,23 @@ export default function () {
         expect(r.json().items[0], 'party').to.have.property("serviceResource").that.equals(auxResource);
     });
 
+    describe('List with org filter', () => {
+        let r = getEU('dialogs/' + defaultFilter + '&Org=' + auxOrg);
+        expectStatusFor(r).to.equal(200);
+        expect(r, 'response').to.have.validJsonBody();
+        expect(r.json(), 'response json').to.have.property("items").with.lengthOf(1);
+        expect(r.json().items[0], 'org').to.have.property("org").that.equals(auxOrg);
+    });
+
     describe("Cleanup", () => {
         dialogIds.forEach((d) => {
-            let r = deleteSO("dialogs/" + d);
+            let r = purgeSO("dialogs/" + d);
             expect(r.status, 'response status').to.equal(204);
         });
     });
-    
-    describe("Check if we get 410 Gone", () => {
+
+    describe("Check if we get 404 Not found", () => {
         let r = getEU('dialogs/' + dialogIds[0]);
-        expectStatusFor(r).to.equal(410);
+        expectStatusFor(r).to.equal(404);
     });
 }

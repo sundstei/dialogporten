@@ -7,13 +7,15 @@ export {
     getEU,
     getSO,
     postSO,
+    postSOAsync,
     putSO,
     patchSO,
-    deleteSO
+    deleteSO,
+    purgeSO
 } from './request.js';
 export {
     setTitle,
-    setBody,
+    setAdditionalInfo,
     setSearchTags,
     setSenderName,
     setStatus,

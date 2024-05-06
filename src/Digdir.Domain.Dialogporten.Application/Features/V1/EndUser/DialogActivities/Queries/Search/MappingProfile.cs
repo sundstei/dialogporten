@@ -8,7 +8,6 @@ internal sealed class MappingProfile : Profile
     public MappingProfile()
     {
         CreateMap<DialogActivity, SearchDialogActivityDto>()
-            .ForMember(dest => dest.Type,
-                opt => opt.MapFrom(src => src.TypeId));
+            .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.TypeId));
     }
 }

@@ -75,6 +75,7 @@ public static class EntityLibraryEfCoreExtensions
     {
         return modelBuilder
             .EnableSoftDeletableQueryFilter()
+            .AddAggregateEntities()
             .AddIdentifiableEntities()
             .AddImmutableEntities()
             .AddVersionableEntities()
@@ -114,10 +115,8 @@ public static class EntityLibraryEfCoreExtensions
         return builder;
     }
 
-    internal static ModelBuilder EntitiesOfType<TEntity>(this ModelBuilder modelBuilder, Action<EntityTypeBuilder> buildAction) where TEntity : class
-    {
-        return modelBuilder.EntitiesOfType(typeof(TEntity), buildAction);
-    }
+    internal static ModelBuilder EntitiesOfType<TEntity>(this ModelBuilder modelBuilder, Action<EntityTypeBuilder> buildAction)
+        where TEntity : class => modelBuilder.EntitiesOfType(typeof(TEntity), buildAction);
 
     internal static ModelBuilder EntitiesOfType(this ModelBuilder modelBuilder, Type type,
         Action<EntityTypeBuilder> buildAction)

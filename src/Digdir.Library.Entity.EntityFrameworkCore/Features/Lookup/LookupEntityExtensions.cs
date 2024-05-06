@@ -9,13 +9,13 @@ namespace Digdir.Library.Entity.EntityFrameworkCore.Features.Lookup;
 
 internal static class LookupEntityExtensions
 {
-    private static readonly ConcurrentDictionary<Type, MethodInfo?> _lookupEntityMethodCache = new();
+    private static readonly ConcurrentDictionary<Type, MethodInfo?> LookupEntityMethodCache = new();
 
     public static ModelBuilder AddLookupEntities(this ModelBuilder modelBuilder)
     {
         var lookupTypes = modelBuilder.Model
             .GetEntityTypes()
-            .Where(x => x.ClrType.TryGetLookupValueMethodInfo(out var _))
+            .Where(x => x.ClrType.TryGetLookupValueMethodInfo(out _))
             .ToList();
 
         foreach (var lookupType in lookupTypes)
@@ -54,7 +54,7 @@ internal static class LookupEntityExtensions
 
     private static bool TryGetLookupValueMethodInfo(this Type type, [NotNullWhen(true)] out MethodInfo? methodInfo)
     {
-        methodInfo = _lookupEntityMethodCache.GetOrAdd(type, GetLookupEntityMethod);
+        methodInfo = LookupEntityMethodCache.GetOrAdd(type, GetLookupEntityMethod);
         return methodInfo is not null;
     }
 
@@ -98,6 +98,6 @@ internal static class LookupEntityExtensions
         {
         }
 
-        public enum Enum { }
+        public enum Enum;
     }
 }

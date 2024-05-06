@@ -19,7 +19,6 @@ internal static class OrderOptions<TOrderDefinition, TTarget>
 
 internal class OrderOptions<TTarget> : IOrderOptions<TTarget>
 {
-    private readonly string _defaultKey;
     private readonly Dictionary<string, OrderSelector<TTarget>> _optionByKey;
 
     public Order<TTarget> DefaultOrder { get; }
@@ -27,9 +26,8 @@ internal class OrderOptions<TTarget> : IOrderOptions<TTarget>
 
     public OrderOptions(string defaultKey, Dictionary<string, OrderSelector<TTarget>> optionByKey)
     {
-        _defaultKey = defaultKey;
         _optionByKey = optionByKey;
-        DefaultOrder = new(_defaultKey, _optionByKey[_defaultKey]);
+        DefaultOrder = new(defaultKey, _optionByKey[defaultKey]);
         IdOrder = new(PaginationConstants.OrderIdKey, _optionByKey[PaginationConstants.OrderIdKey]);
     }
 
@@ -43,16 +41,15 @@ internal class OrderOptions<TTarget> : IOrderOptions<TTarget>
 
         result = value.Split(PaginationConstants.OrderDelimiter, StringSplitOptions.TrimEntries) switch
         {
-            // eks: createdAt
-            [var key]
-                when _optionByKey.TryGetValue(key, out var expression)
-                => new(key, expression),
-
-            // eks: createdAt_desc
-            [var key, var direction]
-                when _optionByKey.TryGetValue(key, out var expression)
-                && Enum.TryParse<OrderDirection>(direction, ignoreCase: true, out var dirEnum)
-                => new(key, expression, dirEnum),
+        // eks: createdAt
+        [var key]
+            when _optionByKey.TryGetValue(key, out var expression)
+        => new(key, expression),
+        // eks: createdAt_desc
+        [var key, var direction]
+            when _optionByKey.TryGetValue(key, out var expression)
+            && Enum.TryParse<OrderDirection>(direction, ignoreCase: true, out var dirEnum)
+        => new(key, expression, dirEnum),
 
             _ => null
         };

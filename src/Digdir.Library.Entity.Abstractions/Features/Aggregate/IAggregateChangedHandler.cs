@@ -6,8 +6,7 @@ namespace Digdir.Library.Entity.Abstractions.Features.Aggregate;
 public interface IAggregateChangedHandler :
     IAggregateCreatedHandler,
     IAggregateUpdatedHandler,
-    IAggregateDeletedHandler
-{ }
+    IAggregateDeletedHandler;
 
 /// <summary>
 /// Defines an entity handler for handling the creation of its own aggregate.
@@ -46,4 +45,16 @@ public interface IAggregateDeletedHandler
     /// <param name="self">The aggregate representing this entity with metadata.</param>
     /// <param name="utcNow">The timestamp of the deletion event in UTC time.</param>
     void OnDelete(AggregateNode self, DateTimeOffset utcNow);
+}
+/// <summary>
+/// Defines an entity handler for handling the deletion of its own aggregate.
+/// </summary>
+public interface IAggregateRestoredHandler
+{
+    /// <summary>
+    /// Handles the restoration of the entity, including associated metadata.
+    /// </summary>
+    /// <param name="self">The aggregate representing this entity with metadata.</param>
+    /// <param name="utcNow">The timestamp of the restoration event in UTC time.</param>
+    void OnRestore(AggregateNode self, DateTimeOffset utcNow);
 }

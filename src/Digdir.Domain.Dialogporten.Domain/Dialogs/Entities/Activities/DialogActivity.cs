@@ -11,7 +11,6 @@ public class DialogActivity : IImmutableEntity, IAggregateCreatedHandler, IEvent
 {
     public Guid Id { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
-
     public Uri? ExtendedType { get; set; }
 
     // === Dependent relationships ===
@@ -34,15 +33,24 @@ public class DialogActivity : IImmutableEntity, IAggregateCreatedHandler, IEvent
     [AggregateChild]
     public DialogActivityPerformedBy? PerformedBy { get; set; }
 
-    public List<DialogActivity> RelatedActivities { get; set; } = new();
+    public List<DialogActivity> RelatedActivities { get; set; } = [];
 
     public void OnCreate(AggregateNode self, DateTimeOffset utcNow)
     {
-        _domainEvents.Add(new DialogActivityCreatedDomainEvent(DialogId, Id));
+        _domainEvents.Add(new DialogActivityCreatedDomainEvent(
+            DialogId, Id, TypeId, Dialog.Party,
+            Dialog.ServiceResource, ExtendedType,
+            RelatedActivityId, DialogElementId, DialogElement?.Type));
     }
 
-    private readonly List<IDomainEvent> _domainEvents = new();
-    public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents;
+    private readonly List<IDomainEvent> _domainEvents = [];
+
+    public IEnumerable<IDomainEvent> PopDomainEvents()
+    {
+        var events = _domainEvents.ToList();
+        _domainEvents.Clear();
+        return events;
+    }
 }
 
 public class DialogActivityDescription : LocalizationSet

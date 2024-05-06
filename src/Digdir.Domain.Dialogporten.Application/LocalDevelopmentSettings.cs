@@ -11,6 +11,9 @@ public sealed class LocalDevelopmentSettings
     public bool UseLocalDevelopmentCloudEventBus { get; init; } = true;
     public bool DisableShortCircuitOutboxDispatcher { get; init; } = true;
     public bool DisableAuth { get; init; } = true;
+    public bool UseLocalDevelopmentNameRegister { get; set; } = true;
+    public bool UseLocalDevelopmentOrganizationRegister { get; set; } = true;
+    public bool UseLocalDevelopmentCompactJwsGenerator { get; set; } = true;
 }
 
 public static class LocalDevelopmentSettingsExtensions

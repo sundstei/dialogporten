@@ -17,9 +17,7 @@ public sealed class GetDialogActivityQuery : IRequest<GetDialogActivityResult>
 }
 
 [GenerateOneOf]
-public partial class GetDialogActivityResult : OneOfBase<GetDialogActivityDto, EntityNotFound, EntityDeleted>
-{
-}
+public partial class GetDialogActivityResult : OneOfBase<GetDialogActivityDto, EntityNotFound, EntityDeleted>;
 
 internal sealed class GetDialogActivityQueryHandler : IRequestHandler<GetDialogActivityQuery, GetDialogActivityResult>
 {
@@ -53,7 +51,7 @@ internal sealed class GetDialogActivityQueryHandler : IRequestHandler<GetDialogA
 
         var authorizationResult = await _altinnAuthorization.GetDialogDetailsAuthorization(
             dialog,
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
         // If we cannot read the dialog at all, we don't allow access to any of the activity history
         if (!authorizationResult.HasReadAccessToMainResource())

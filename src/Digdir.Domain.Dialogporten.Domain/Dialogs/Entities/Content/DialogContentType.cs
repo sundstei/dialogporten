@@ -12,6 +12,7 @@ public class DialogContentType : AbstractLookupEntity<DialogContentType, DialogC
         SenderName = 2,
         Summary = 3,
         AdditionalInfo = 4,
+        ExtendedStatus = 5
     }
 
     public bool Required { get; private init; }
@@ -48,6 +49,13 @@ public class DialogContentType : AbstractLookupEntity<DialogContentType, DialogC
             RenderAsHtml = true,
             MaxLength = 1023,
             OutputInList = false
+        },
+        Values.ExtendedStatus => new(id)
+        {
+            Required = false,
+            RenderAsHtml = false,
+            MaxLength = 20,
+            OutputInList = true
         },
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, null)
     };

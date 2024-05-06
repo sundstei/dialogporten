@@ -1,5 +1,5 @@
-﻿using Digdir.Domain.Dialogporten.Application.Common.Extensions.FluentValidation;
-using Digdir.Domain.Dialogporten.Application.Common.Numbers;
+﻿using Digdir.Domain.Dialogporten.Application.Common.Extensions.Enumerables;
+using Digdir.Domain.Dialogporten.Application.Common.Extensions.FluentValidation;
 using Digdir.Domain.Dialogporten.Application.Features.V1.Common.Localizations;
 using Digdir.Domain.Dialogporten.Domain.Common;
 using Digdir.Domain.Dialogporten.Domain.Dialogs.Entities.Actions;
@@ -25,18 +25,12 @@ internal sealed class CreateDialogCommandValidator : AbstractValidator<CreateDia
             .NotNull()
             .IsValidUri()
             .MaximumLength(Constants.DefaultMaxUriLength)
-            .Must(x => x?.StartsWith(Constants.ServiceResourcePrefix, StringComparison.InvariantCulture) ?? false)
+            .Must(x =>
+                x?.StartsWith(Constants.ServiceResourcePrefix, StringComparison.InvariantCulture) ?? false)
                 .WithMessage($"'{{PropertyName}}' must start with '{Constants.ServiceResourcePrefix}'.");
 
         RuleFor(x => x.Party)
-            .Must(x => x is null || x.Split('/') switch
-            {
-                ["", "org", var orgNumber] => OrganizationNumber.IsValid(orgNumber),
-                ["", "person", var socialSecurityNumber] => SocialSecurityNumber.IsValid(socialSecurityNumber),
-                _ => false
-            }).WithMessage(
-                "'{PropertyName}' must be on format '/org/[orgNumber]' or " +
-                "'/person/[socialSecurityNumber]' with valid numbers respectively.")
+            .IsValidPartyIdentifier()
             .NotEmpty()
             .MaximumLength(Constants.DefaultMaxStringLength);
 
@@ -54,15 +48,15 @@ internal sealed class CreateDialogCommandValidator : AbstractValidator<CreateDia
         RuleFor(x => x.ExpiresAt)
             .IsInFuture()
             .GreaterThanOrEqualTo(x => x.DueAt)
-                .WithMessage(FluentValidation_DateTimeOffset_Extensions.InFutureOfMessage)
+                .WithMessage(FluentValidationDateTimeOffsetExtensions.InFutureOfMessage)
                 .When(x => x.DueAt.HasValue, ApplyConditionTo.CurrentValidator)
             .GreaterThanOrEqualTo(x => x.VisibleFrom)
-                .WithMessage(FluentValidation_DateTimeOffset_Extensions.InFutureOfMessage)
+                .WithMessage(FluentValidationDateTimeOffsetExtensions.InFutureOfMessage)
                 .When(x => x.VisibleFrom.HasValue, ApplyConditionTo.CurrentValidator);
         RuleFor(x => x.DueAt)
             .IsInFuture()
             .GreaterThanOrEqualTo(x => x.VisibleFrom)
-                .WithMessage(FluentValidation_DateTimeOffset_Extensions.InFutureOfMessage)
+                .WithMessage(FluentValidationDateTimeOffsetExtensions.InFutureOfMessage)
                 .When(x => x.VisibleFrom.HasValue, ApplyConditionTo.CurrentValidator);
         RuleFor(x => x.VisibleFrom)
             .IsInFuture();
@@ -74,24 +68,28 @@ internal sealed class CreateDialogCommandValidator : AbstractValidator<CreateDia
             .UniqueBy(x => x.Type)
             .Must(content => DialogContentType.RequiredTypes
                 .All(requiredContent => content
+                    .EmptyIfNull()
                     .Select(x => x.Type)
                     .Contains(requiredContent)))
-            .WithMessage($"Dialog must contain the following content: [{string.Join(", ", DialogContentType.RequiredTypes)}].")
+            .WithMessage("Dialog must contain the following content: " +
+                         $"[{string.Join(", ", DialogContentType.RequiredTypes)}].")
             .ForEach(x => x.SetValidator(contentValidator));
 
-        RuleForEach(x => x.SearchTags)
-            .SetValidator(searchTagValidator);
         RuleFor(x => x.SearchTags)
-            .UniqueBy(x => x.Value, StringComparer.InvariantCultureIgnoreCase);
+            .UniqueBy(x => x.Value, StringComparer.InvariantCultureIgnoreCase)
+            .ForEach(x => x.SetValidator(searchTagValidator));
 
         RuleFor(x => x.GuiActions)
             .Must(x => x
+                .EmptyIfNull()
                 .Count(x => x.Priority == DialogGuiActionPriority.Values.Primary) <= 1)
                 .WithMessage("Only one primary GUI action is allowed.")
             .Must(x => x
+                .EmptyIfNull()
                 .Count(x => x.Priority == DialogGuiActionPriority.Values.Secondary) <= 1)
                 .WithMessage("Only one secondary GUI action is allowed.")
             .Must(x => x
+                .EmptyIfNull()
                 .Count(x => x.Priority == DialogGuiActionPriority.Values.Tertiary) <= 5)
                 .WithMessage("Only five tertiary GUI actions are allowed.")
             .ForEach(x => x.SetValidator(guiActionValidator));
@@ -127,6 +125,7 @@ internal sealed class CreateDialogContentDtoValidator : AbstractValidator<Create
 {
     public CreateDialogContentDtoValidator()
     {
+        ClassLevelCascadeMode = CascadeMode.Stop;
         RuleFor(x => x.Type)
             .IsInEnum();
         RuleForEach(x => x.Value)

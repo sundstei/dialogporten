@@ -12,7 +12,12 @@ internal sealed class MappingProfile : Profile
     public MappingProfile()
     {
         CreateMap<DialogEntity, GetDialogDto>()
-            .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.StatusId));
+            .ForMember(dest => dest.Revision, opt => opt.MapFrom(src => src.Revision))
+            .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.StatusId))
+            .ForMember(dest => dest.SeenSinceLastUpdate, opt => opt.Ignore());
+
+        CreateMap<DialogSeenLog, GetDialogDialogSeenLogDto>()
+            .ForMember(dest => dest.SeenAt, opt => opt.MapFrom(src => src.CreatedAt));
 
         CreateMap<DialogActivity, GetDialogDialogActivityDto>()
             .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.TypeId));
@@ -33,4 +38,5 @@ internal sealed class MappingProfile : Profile
         CreateMap<DialogContent, GetDialogContentDto>()
             .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.TypeId));
     }
+
 }

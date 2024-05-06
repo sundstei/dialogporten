@@ -26,10 +26,7 @@ public static class SoftDeletableExtensions
     /// access to change tracking information and operations for the entity.
     /// </returns>
     public static EntityEntry<TSoftDeletableEntity> HardRemove<TSoftDeletableEntity>(this DbSet<TSoftDeletableEntity> set, TSoftDeletableEntity entity)
-        where TSoftDeletableEntity : class, ISoftDeletableEntity
-    {
-        return set.Remove(entity);
-    }
+        where TSoftDeletableEntity : class, ISoftDeletableEntity => set.Remove(entity);
 
     /// <summary>
     /// Marks a <typeparamref name="TSoftDeletableEntity"/> as hard deleted.
@@ -91,14 +88,38 @@ public static class SoftDeletableExtensions
         return modelBuilder.EntitiesOfType<ISoftDeletableEntity>(builder =>
         {
             var method = _openGenericInternalMethodInfo.MakeGenericMethod(builder.Metadata.ClrType);
-            method.Invoke(null, new object[] { modelBuilder });
+            method.Invoke(null, [modelBuilder]);
         });
+    }
+
+    internal static bool IsMarkedForSoftDeletion(this EntityEntry entry)
+    {
+        return entry.Entity is ISoftDeletableEntity
+            && !(bool)entry.Property(nameof(ISoftDeletableEntity.Deleted)).OriginalValue! // Not already soft deleted in database
+            && (bool)entry.Property(nameof(ISoftDeletableEntity.Deleted)).CurrentValue!; // Deleted in memory
+    }
+
+    internal static bool IsMarkedForRestoration(this EntityEntry entry)
+    {
+        return entry.Entity is ISoftDeletableEntity
+            && (bool)entry.Property(nameof(ISoftDeletableEntity.Deleted)).OriginalValue! // Already soft deleted in database
+            && !(bool)entry.Property(nameof(ISoftDeletableEntity.Deleted)).CurrentValue!; // Restored in memory
+    }
+
+    internal static bool IsSoftDeleted(this EntityEntry entry)
+    {
+        return entry.Entity is ISoftDeletableEntity
+            && (bool)entry.Property(nameof(ISoftDeletableEntity.Deleted)).OriginalValue!; // Already soft deleted in database
     }
 
     internal static ChangeTracker HandleSoftDeletableEntities(this ChangeTracker changeTracker, DateTimeOffset utcNow)
     {
-        var softDeletedEntities = changeTracker
+        var softDeletableEntities = changeTracker
             .Entries<ISoftDeletableEntity>()
+            .ToList()
+            .AssertNoModifiedSoftDeletedEntity();
+
+        var softDeletedEntities = softDeletableEntities
             .Where(x => x.State is EntityState.Modified or EntityState.Added && x.Entity.Deleted);
 
         foreach (var entity in softDeletedEntities)
@@ -109,9 +130,18 @@ public static class SoftDeletableExtensions
         return changeTracker;
     }
 
-    private static void EnableSoftDeletableQueryFilter_Internal<T>(ModelBuilder modelBuilder)
-        where T : class, ISoftDeletableEntity
+    private static List<EntityEntry<ISoftDeletableEntity>> AssertNoModifiedSoftDeletedEntity(this List<EntityEntry<ISoftDeletableEntity>> softDeletableEntities)
     {
-        modelBuilder.Entity<T>().HasQueryFilter(x => !x.Deleted);
+        var invalidSoftDeleteModifications = softDeletableEntities
+            .Where(x => x.State is EntityState.Modified
+                && x.Property(x => x.Deleted).OriginalValue // Allerede slettet i databasen
+                && !x.Property(x => x.Deleted).CurrentValue); // Ikke gjennopprettet i koden
+
+        return invalidSoftDeleteModifications.Any()
+            ? throw new InvalidOperationException("Cannot modify a soft deleted entity without restoring it first.")
+            : softDeletableEntities;
     }
+
+    private static void EnableSoftDeletableQueryFilter_Internal<T>(ModelBuilder modelBuilder)
+        where T : class, ISoftDeletableEntity => modelBuilder.Entity<T>().HasQueryFilter(x => !x.Deleted);
 }
